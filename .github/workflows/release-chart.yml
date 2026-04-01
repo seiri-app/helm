@@ -14,8 +14,11 @@ jobs:
     permissions:
       packages: write
       contents: write
+      pages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Helm
         uses: azure/setup-helm@v3
@@ -39,3 +42,80 @@ jobs:
           name: seiri-kube-agent v${{ steps.chart.outputs.version }}
           files: seiri-kube-agent-${{ steps.chart.outputs.version }}.tgz
           generate_release_notes: true
+
+      - name: Update gh-pages
+        run: |
+          # Clone gh-pages branch or create it
+          git clone --branch gh-pages https://x-access-token:${{ secrets.TOKEN }}@github.com/${{ github.repository }}.git gh-pages || {
+            mkdir gh-pages
+            cd gh-pages
+            git init
+            git checkout -b gh-pages
+            git remote add origin https://x-access-token:${{ secrets.TOKEN }}@github.com/${{ github.repository }}.git
+          }
+
+          # Copy the packaged chart
+          cp seiri-kube-agent-*.tgz gh-pages/
+
+          cd gh-pages
+
+          # Rebuild Helm index
+          helm repo index . --url https://seiri-app.github.io/seiri-kube-agent
+
+          # Generate HTML landing page
+          cat > index.html << 'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Seiri Kube Agent — Helm Chart</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+              .container { max-width: 640px; padding: 2rem; }
+              h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #fff; }
+              .badge { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 2px 8px; font-size: 0.8rem; color: #94a3b8; margin-bottom: 1.5rem; }
+              p { color: #94a3b8; line-height: 1.6; margin-bottom: 1.5rem; }
+              h2 { font-size: 1.1rem; color: #cbd5e1; margin-bottom: 0.75rem; }
+              .code-block { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto; }
+              code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.85rem; color: #7dd3fc; }
+              .or { text-align: center; color: #475569; margin: 1rem 0; font-size: 0.85rem; }
+              .links { display: flex; gap: 1rem; margin-top: 2rem; }
+              .links a { color: #38bdf8; text-decoration: none; font-size: 0.9rem; }
+              .links a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>seiri-kube-agent</h1>
+              <span class="badge">Helm Chart</span>
+              <p>Kubernetes operator that monitors cluster health and reports status to the Seiri observability platform.</p>
+
+              <h2>Install via Helm repo</h2>
+              <div class="code-block">
+                <code>helm repo add seiri https://seiri-app.github.io/seiri-kube-agent<br>helm repo update<br>helm install seiri-agent seiri/seiri-kube-agent</code>
+              </div>
+
+              <div class="or">— or via OCI —</div>
+
+              <h2>Install via OCI (GHCR)</h2>
+              <div class="code-block">
+                <code>helm install seiri-agent oci://ghcr.io/seiri-app/charts/seiri-kube-agent</code>
+              </div>
+
+              <div class="links">
+                <a href="https://github.com/seiri-app/seiri-kube-agent">GitHub</a>
+                <a href="index.yaml">Chart Index</a>
+              </div>
+            </div>
+          </body>
+          </html>
+          HTML
+
+          # Commit and push
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git add .
+          git commit -m "Release seiri-kube-agent v${{ steps.chart.outputs.version }}"
+          git push origin gh-pages
