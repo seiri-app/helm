@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +23,19 @@ jobs:
       - name: Login to GHCR
         run: echo "${{ secrets.TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Package and push
+      - name: Extract version
+        id: chart
+        run: echo "version=$(grep '^version:' Chart.yaml | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Package and push to GHCR
         run: |
           helm package .
           helm push seiri-kube-agent-*.tgz oci://ghcr.io/seiri-app/charts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.chart.outputs.version }}
+          name: seiri-kube-agent v${{ steps.chart.outputs.version }}
+          files: seiri-kube-agent-${{ steps.chart.outputs.version }}.tgz
+          generate_release_notes: true
